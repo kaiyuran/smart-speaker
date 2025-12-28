@@ -30,7 +30,7 @@ import soundfile as sf
 import base64
 
 # Replace with your server IP/port
-WS_URI = "ws://172.20.0.1:8765"
+WS_URI = "ws://10.0.0.122:8765"
 
 # Audio chunk size in bytes
 CHUNK_SIZE = 1024
@@ -61,6 +61,6 @@ async def send_wav_chunks(file_path):
             print("Server replied:", response)
 
 if __name__ == "__main__":
-    asyncio.run(send_wav_chunks("example16.wav"))
+    asyncio.run(send_wav_chunks("zoo16.wav"))
 
 # """

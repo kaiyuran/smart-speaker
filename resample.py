@@ -2,7 +2,7 @@ import librosa
 import soundfile as sf
 
 # Load original WAV
-data, orig_sr = librosa.load("example.wav", sr=None)  # sr=None preserves original rate
+data, orig_sr = librosa.load("me_at_the_zoo.wav", sr=None)  # sr=None preserves original rate
 
 # Resample to new rate (e.g., 16000 Hz)
 target_sr = 16000
