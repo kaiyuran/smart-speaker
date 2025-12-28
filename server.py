@@ -5,13 +5,21 @@ import json
 import base64
 from faster_whisper import WhisperModel
 import numpy as np
-
+import time
 import soundfile as sf
+import ollama
 
 HOST = "0.0.0.0"
 PORT = 8765
 
-#setup sst
+#setup ollama
+client = ollama.Client()
+# url = "http://localhost:11434/api/chat"
+ollama_model = "speakerAssistantv5"
+history = []
+
+
+#setup stt
 model = WhisperModel(
     "small",
     device="cpu",
@@ -37,18 +45,29 @@ async def handler(ws):
             print(inputAudio.shape)
             sf.write("output.wav", inputAudio, 16000) 
 
-            # TODO 1: Speech-to-text
+            #Speech-to-text
             print("Performing STT...")
-            segments, info = model.transcribe(inputAudio, language="en")
-            text = "".join([seg.text for seg in segments])
-            print("STT:", text) 
-            # text = "hello world"
+            # startTime = time.time()
+            # segments, info = model.transcribe(inputAudio, language="en")
+            # # print("STT took", time.time() - startTime, "seconds")
+            # text = "".join([seg.text for seg in segments])
+            # print("STT:", text) 
+            
+            text = "whats your name"  
 
 
             # =========================
             # TODO 2: Ollama
-            reply = "Hello! I heard you."
-            print("LLM:", reply)
+            # reply = "Hello! I heard you."
+            history.append({"role": "user", "content": text})
+            print("Sending to LLM...", history)
+            response = ollama.chat(model=ollama_model,messages=history)
+            history.append({"role": "assistant", "content": response.message.content})
+            print("LLM:", response.message)
+
+
+
+
 
             # =========================
             # TODO 3: Text-to-speech

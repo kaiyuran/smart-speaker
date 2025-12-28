@@ -1,0 +1,32 @@
+Server listening on 8765
+Client connected
+End of utterance
+(305018,)
+Performing STT...
+Sending to LLM... [{'role': 'user', 'content': 'hi, how are you today?'}]
+LLM: model='smartSpeaker' created_at='2025-12-28T06:14:23.9582035Z' done=True done_reason='stop' total_duration=17618709400 load_duration=4552034100 prompt_eval_count=106 prompt_eval_duration=10649769300 eval_count=20 eval_duration=2342093400 message=Message(role='assistant', content="Hi! I'm functioning within optimal parameters, thanks for asking. What brings you joy today?", thinking=None, images=None, tool_name=None, tool_calls=None) logprobs=None
+Client connected
+End of utterance
+(305018,)
+Performing STT...
+Sending to LLM... [{'role': 'user', 'content': 'hi, how are you today?'}, {'role': 'assistant', 'content': ChatResponse(model='smartSpeaker', created_at='2025-12-28T06:14:23.9582035Z', done=True, done_reason='stop', total_duration=17618709400, load_duration=4552034100, prompt_eval_count=106, prompt_eval_duration=10649769300, eval_count=20, eval_duration=2342093400, message=Message(role='assistant', content="Hi! I'm functioning within optimal parameters, thanks for asking. What brings you joy today?", thinking=None, images=None, tool_name=None, tool_calls=None), logprobs=None)}, {'role': 'user', 'content': 'hi, how are you today?'}]
+connection handler failed
+Traceback (most recent call last):
+  File "C:\Users\kaiyu\AppData\Local\Programs\Python\Python311\Lib\site-packages\websockets\asyncio\server.py", line 376, in conn_handler
+    await self.handler(connection)
+  File "c:\Users\kaiyu\Documents\GitHub\smart-speaker\server.py", line 64, in handler
+    response = ollama.chat(model=ollama_model,messages=history)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kaiyu\AppData\Local\Programs\Python\Python311\Lib\site-packages\ollama\_client.py", line 371, in chat
+    messages=list(_copy_messages(messages)),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kaiyu\AppData\Local\Programs\Python\Python311\Lib\site-packages\ollama\_client.py", line 1286, in _copy_messages
+    yield Message.model_validate(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kaiyu\AppData\Local\Programs\Python\Python311\Lib\site-packages\pydantic\main.py", line 716, in model_validate
+    return cls.__pydantic_validator__.validate_python(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Message      
+content
+  Input should be a valid string [type=string_type, input_value=ChatResponse(model='smart...ls=None), logprobs=None), input_type=ChatResponse]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type  
