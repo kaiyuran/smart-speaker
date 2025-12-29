@@ -30,13 +30,14 @@ def main():
             full_reply = ""
 
             for chunk in stream:
-                if "message" not in chunk:
-                    continue
+                # print(chunk)
 
-                token = chunk["message"]["content"]
-                print(token, end="", flush=True)
-                full_reply += token
-
+                try:
+                    token = chunk.message.content
+                    print(token, end="")#, flush=True)
+                    full_reply += token
+                except:
+                    pass
             # print()
             history.append({
                 "role": "assistant",

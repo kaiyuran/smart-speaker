@@ -1,13 +1,15 @@
 
 import asyncio
-import websockets
+import websockets as ws
 import json
 import base64
 from faster_whisper import WhisperModel
 import numpy as np
-import time
 import soundfile as sf
 import ollama
+from io import BytesIO 
+from piper import PiperVoice
+import wave
 
 HOST = "0.0.0.0"
 PORT = 8765
@@ -15,9 +17,8 @@ PORT = 8765
 #setup ollama
 client = ollama.Client()
 # url = "http://localhost:11434/api/chat"
-ollama_model = "speakerAssistantv5"
+ollama_model = "speakerAssistantv7"
 history = []
-
 
 #setup stt
 model = WhisperModel(
@@ -25,6 +26,30 @@ model = WhisperModel(
     device="cpu",
     compute_type="int8"
 )
+
+#Set up punctuation list for making phrases
+punctuation = [".", ",", "!", "?", ";", ":"]
+
+
+#TTS
+# Load voice
+voice = PiperVoice.load("piper_models/en_US-ryan-low.onnx")
+
+
+async def ttsStream(text): #phrase --> piper --> stream of pcm chunks -->
+    # Placeholder TTS function
+    def send():
+        for chunk in voice.synthesize(text):
+            asyncio.run_coroutine_threadsafe(
+                ws.send(json.dumps({
+                    "type": "audio",
+                    "data": base64.b64encode(chunk.audio_int16_bytes).decode()
+                })), asyncio.get_event_loop()
+            )
+    await asyncio.to_thread(send)
+
+    # await asyncio.sleep(1)
+    # return b"\x00" * 16000  # 1 second of silence as placeholder
 
 
 async def handler(ws):
@@ -53,37 +78,76 @@ async def handler(ws):
             # text = "".join([seg.text for seg in segments])
             # print("STT:", text) 
             
-            text = "whats your name"  
-
+            text = input("Enter simulated STT text: ")
 
             # =========================
             # TODO 2: Ollama
             # reply = "Hello! I heard you."
             history.append({"role": "user", "content": text})
             print("Sending to LLM...", history)
-            response = ollama.chat(model=ollama_model,messages=history)
-            history.append({"role": "assistant", "content": response.message.content})
-            print("LLM:", response.message)
+            # response = ollama.chat(model=ollama_model,messages=history)
+            stream = ollama.chat(model=ollama_model,messages=history,stream=True)
+            print("LLM:",end=" ")
+            full_reply = ""
+            # responseText = ""
+
+            #songs
+            songrec = False
+            song = ""
+
+            currphrase = ""
+
+            for chunk in stream:
+                # print(chunk)
+                try:
+                    token = chunk.message.content
+                    full_reply += token
+                    if "⚇" in full_reply and not "⚇" in token: #song recs
+                        # print("["+token+"]")
+                        # responseText = responseText.lower().rstrip().replace("recsong:","").rstrip()
+                        songrec = True
+                        song += token
+                    elif not "⚇" in full_reply: #normal text
+                        print(token, end="")
+                        if any(p in token for p in punctuation): #check if its te end of a phrase
+                            currphrase += token
+                            await ttsStream(currphrase)
+                            #TODO tts(currphrase) with streaming
+                            currphrase = ""
+
+                        responseText += token
+                        currphrase += token
+
+                except:
+                    pass
+            # print(full_reply)
+            history.append({"role": "assistant", "content": full_reply})
+            if songrec:
+                song = song.lstrip()
 
 
-
+            # print("Response to user:", responseText)
+            print("Full song recommendation:", song)
+            # print("LLM:", full_reply)
 
 
             # =========================
             # TODO 3: Text-to-speech
-            fake_pcm = b"\x00" * 16000  # placeholder audio
+            # fake_pcm = b"\x00" * 16000  # placeholder audio
 
-            await ws.send(json.dumps({
-                "type": "audio",
-                "data": base64.b64encode(fake_pcm).decode()
-            }))
+
+
+            # await ws.send(json.dumps({
+            #     "type": "audio",
+            #     "data": base64.b64encode(fake_pcm).decode()
+            # }))
 
             await ws.send(json.dumps({"type": "done"}))
 
             audio_buffer.clear()
 
 async def main():
-    async with websockets.serve(handler, HOST, PORT):
+    async with ws.serve(handler, HOST, PORT):
         print(f"Server listening on {PORT}")
         await asyncio.Future()
 
