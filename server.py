@@ -10,6 +10,7 @@ import ollama
 from io import BytesIO 
 from piper import PiperVoice
 import wave
+import pyaudio
 
 HOST = "0.0.0.0"
 PORT = 8765
@@ -34,22 +35,39 @@ punctuation = [".", ",", "!", "?", ";", ":"]
 #TTS
 # Load voice
 voice = PiperVoice.load("piper_models/en_US-ryan-low.onnx")
+p = pyaudio.PyAudio()
+
+def play_pcm(pcm_bytes, sample_rate=22050, channels=1):
+    """Play raw PCM16 audio bytes via PyAudio (blocking)."""
+    stream = p.open(format=pyaudio.paInt16,
+                    channels=channels,
+                    rate=sample_rate,
+                    output=True)
+    stream.write(pcm_bytes)
+    stream.stop_stream()
+    stream.close()
 
 
-async def ttsStream(text): #phrase --> piper --> stream of pcm chunks -->
-    # Placeholder TTS function
-    def send():
-        for chunk in voice.synthesize(text):
-            asyncio.run_coroutine_threadsafe(
-                ws.send(json.dumps({
-                    "type": "audio",
-                    "data": base64.b64encode(chunk.audio_int16_bytes).decode()
-                })), asyncio.get_event_loop()
-            )
-    await asyncio.to_thread(send)
+async def ttsStream(text, ws_conn): #phrase --> piper --> stream of pcm chunks -->
+    print("generating TTS for:", text)
 
-    # await asyncio.sleep(1)
-    # return b"\x00" * 16000  # 1 second of silence as placeholder
+    def synthesize_chunks():
+        chunks = []
+        for audio_chunk in voice.synthesize(text):
+            chunks.append(audio_chunk.audio_int16_bytes)
+        return chunks
+
+    # Synthesize in thread
+    chunks = await asyncio.to_thread(synthesize_chunks)
+
+    # Send and play in async context
+    for pcm_chunk in chunks:
+        await ws_conn.send(json.dumps({
+            "type": "audio",
+            "data": base64.b64encode(pcm_chunk).decode()
+        }))
+        # print("playing chunk")
+        # play_pcm(pcm_chunk, sample_rate=voice.config.sample_rate)
 
 
 async def handler(ws):
@@ -64,11 +82,11 @@ async def handler(ws):
             audio_buffer.extend(base64.b64decode(msg["data"]))
 
         elif msg["type"] == "end":
-            print("End of utterance")
+            print("End of talking")
 
             inputAudio = np.frombuffer(audio_buffer, np.int16).astype(np.float32) / 32768.0
-            print(inputAudio.shape)
-            sf.write("output.wav", inputAudio, 16000) 
+            # print(inputAudio.shape)
+            # sf.write("output.wav", inputAudio, 16000) 
 
             #Speech-to-text
             print("Performing STT...")
@@ -99,28 +117,38 @@ async def handler(ws):
 
             for chunk in stream:
                 # print(chunk)
-                try:
-                    token = chunk.message.content
-                    full_reply += token
-                    if "⚇" in full_reply and not "⚇" in token: #song recs
-                        # print("["+token+"]")
-                        # responseText = responseText.lower().rstrip().replace("recsong:","").rstrip()
-                        songrec = True
-                        song += token
-                    elif not "⚇" in full_reply: #normal text
-                        print(token, end="")
-                        if any(p in token for p in punctuation): #check if its te end of a phrase
-                            currphrase += token
-                            await ttsStream(currphrase)
-                            #TODO tts(currphrase) with streaming
-                            currphrase = ""
+                # try:
+                token = chunk.message.content
+                full_reply += token
 
-                        responseText += token
-                        currphrase += token
-
-                except:
+                if "⚇" in token:#song rec trigger
                     pass
-            # print(full_reply)
+
+                elif "⚇" in full_reply: #song recs
+                    # print("["+token+"]")
+                    # responseText = responseText.lower().rstrip().replace("recsong:","").rstrip()
+                    songrec = True
+                    song += token
+                else: #normal text
+                    # responseText += token
+                    currphrase += token
+
+                    # print("current token is", token)
+                    print(token, end="")
+                    if any(p in token for p in punctuation): #check if its te end of a phrase
+                        # print("end of phrase")
+                        currphrase += token
+                        print("current phrase is", currphrase)
+                        await ttsStream(currphrase, ws)
+                        #TODO tts(currphrase) with streaming
+                        currphrase = ""
+
+
+
+                # except:
+                #     print("error in token stream")
+                    # pass
+            print(full_reply)
             history.append({"role": "assistant", "content": full_reply})
             if songrec:
                 song = song.lstrip()

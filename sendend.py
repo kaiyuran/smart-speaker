@@ -1,33 +1,10 @@
-"""
-import asyncio
-import websockets
-import json
-
-# Replace with your server IP/port
-WS_URL = "ws://172.20.0.1:8765"
-
-async def send_end_trigger():
-    async with websockets.connect(WS_URL) as ws:
-        # Send the "end" message
-        msg = {"type": "end"}
-        await ws.send(json.dumps(msg))
-        print("Sent end trigger")
-
-        # Optional: wait for server response
-        response = await ws.recv()
-        print("Server replied:", response)
-
-if __name__ == "__main__":
-    asyncio.run(send_end_trigger())
-
-"""
-
 import asyncio
 import websockets
 import json
 import numpy as np
 import soundfile as sf
 import base64
+import pyaudio
 
 # Replace with your server IP/port
 WS_URI = "ws://10.0.0.122:8765"
@@ -35,7 +12,19 @@ WS_URI = "ws://10.0.0.122:8765"
 # Audio chunk size in bytes
 CHUNK_SIZE = 1024
 
+# Audio settings
+SAMPLE_RATE = 16000
+CHANNELS = 1
+FORMAT = pyaudio.paInt16
+
 async def send_wav_chunks(file_path):
+    # Initialize PyAudio for playback
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=SAMPLE_RATE,
+                    output=True)
+    
     async with websockets.connect(WS_URI) as ws:
         # Load WAV file
         data, sr = sf.read(file_path)  # float32 in [-1,1]
@@ -56,9 +45,27 @@ async def send_wav_chunks(file_path):
         await ws.send(json.dumps({"type": "end"}))
         print("Sent all audio chunks and end trigger")
 
-        # Optional: wait for server response
+        # Receive and play audio from server
         async for response in ws:
-            print("Server replied:", response)
+            try:
+                msg = json.loads(response)
+                if msg.get("type") == "audio":
+                    # Decode and play audio from server
+                    audio_data = base64.b64decode(msg["data"])
+                    stream.write(audio_data)
+                    print("Playing audio chunk from server")
+                elif msg.get("type") == "end":
+                    print("Server finished sending audio")
+                    break
+                else:
+                    print("Server replied:", response)
+            except json.JSONDecodeError:
+                print("Server replied:", response)
+    
+    # Cleanup
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
 
 if __name__ == "__main__":
     asyncio.run(send_wav_chunks("zoo16.wav"))

@@ -14,7 +14,7 @@ p = pyaudio.PyAudio()
 stream = None
 
 # Stream audio
-for chunk in voice.synthesize(text_to_speak):
+for chunk in voice.synthesize(text_to_speak, length_scale=1.25):
     if stream is None:
         print(chunk)
         # Open PyAudio stream using first chunk's parameters
