@@ -59,6 +59,7 @@ async def ttsStream(text, ws_conn): #phrase --> piper --> stream of pcm chunks -
 
     # Synthesize in thread
     chunks = await asyncio.to_thread(synthesize_chunks)
+    await asyncio.sleep(0.1)  # slight delay before sending
 
     # Send and play in async context
     for pcm_chunk in chunks:
@@ -91,12 +92,12 @@ async def handler(ws):
             #Speech-to-text
             print("Performing STT...")
             # startTime = time.time()
-            # segments, info = model.transcribe(inputAudio, language="en")
-            # # print("STT took", time.time() - startTime, "seconds")
-            # text = "".join([seg.text for seg in segments])
-            # print("STT:", text) 
+            segments, info = model.transcribe(inputAudio, language="en")
+            # print("STT took", time.time() - startTime, "seconds")
+            text = "".join([seg.text for seg in segments])
+            print("STT:", text) 
             
-            text = input("Enter simulated STT text: ")
+            # text = input("Enter simulated STT text: ")
 
             # =========================
             # TODO 2: Ollama
@@ -139,7 +140,7 @@ async def handler(ws):
                         # print("end of phrase")
                         currphrase += token
                         print("current phrase is", currphrase)
-                        await ttsStream(currphrase, ws)
+                        await ttsStream(currphrase[:-1], ws)
                         #TODO tts(currphrase) with streaming
                         currphrase = ""
 
@@ -152,10 +153,13 @@ async def handler(ws):
             history.append({"role": "assistant", "content": full_reply})
             if songrec:
                 song = song.lstrip()
-
-
-            # print("Response to user:", responseText)
-            print("Full song recommendation:", song)
+                # print("Response to user:", responseText)
+                print("Full song recommendation:", song)
+                await ws.send(json.dumps({
+                    "type": "songrec",
+                    "data": song
+                }))
+            
             # print("LLM:", full_reply)
 
 

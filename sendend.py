@@ -57,6 +57,8 @@ async def send_wav_chunks(file_path):
                 elif msg.get("type") == "end":
                     print("Server finished sending audio")
                     break
+                elif msg.get("type") == "song":
+                    print("Server sent song info:", msg.get("info", "No info"))
                 else:
                     print("Server replied:", response)
             except json.JSONDecodeError:

@@ -1,2 +1,2 @@
 t = "qwertyuiop"
-print(list(t))
+print(t[:-1])
