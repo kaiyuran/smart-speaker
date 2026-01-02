@@ -6,37 +6,72 @@ import json
 import base64
 import time
 import numpy as np
+import pyaudio
 
 # ===== CONFIG =====
-ACCESS_KEY = ""
+ACCESSKEY = ""
 KEYWORD = "picovoice"
-WEBSOCKET_URI = "ws://10.0.0.122:8765"
+WEBSOCKETURI = "ws://10.0.0.122:8765"
 
-SAMPLE_RATE = 16000
+SAMPLERATE = 16000
 CHANNELS = 1
-# RECORD_SECONDS = 5
 baseRms = 8
-rmsRollling = []
+rmsRolling = []
 
 # ===== PORCUPINE =====
 porcupine = pvporcupine.create(
-    access_key=ACCESS_KEY,
+    access_key=ACCESSKEY,
     keywords=[KEYWORD],
     sensitivities=[0.5]
 )
 
-async def run_client(baseRms):
-    async with websockets.connect(WEBSOCKET_URI) as ws:
+#server responses
+
+async def receiveResponses(ws, stream, ttsState):
+    async for response in ws:
+        try:
+            msg = json.loads(response)
+            if msg.get("type") == "audio" and ttsState["ttsActive"]:
+                # Decode and play audio chunks
+                audioData = base64.b64decode(msg["data"])
+                stream.write(audioData)
+                print("Playing audio chunk from server")
+
+            elif msg.get("type") == "end":
+                print("Server finished sending audio")
+                
+                break
+            elif msg.get("type") == "song":
+                print("Server sent song info:", msg.get("info", "No info"))
+            else:
+                print("Server replied:", response)
+        except json.JSONDecodeError:
+            print("Server replied:", response)
+
+
+
+
+async def runClient(baseRms):
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=pyaudio.paInt16,
+                    channels=CHANNELS,
+                    rate=SAMPLERATE,
+                    output=True)
+
+    async with websockets.connect(WEBSOCKETURI) as ws:
         loop = asyncio.get_running_loop()
 
-        wake_active = False
-        wake_start_time = 0.0
-        end_sent = False
+        wakeActive = False
+        wakeStartTime = 0.0
+        endSent = False
+        ttsState = {"ttsActive": True} #tts state fopr interrrupts
 
+        asyncio.create_task(receiveResponses(ws, stream, ttsState)) #start loop to listen for responses 
 
-        def audio_callback(indata, frames, time_info, status):
+        def audioCallback(indata, frames, timeInfo, status):
             global rmsRolling
-            nonlocal wake_active, wake_start_time, end_sent
+            nonlocal wakeActive, wakeStartTime, endSent
 
             if status:
                 print(status)
@@ -44,14 +79,19 @@ async def run_client(baseRms):
             pcm = (indata[:, 0] * 32767).astype("int16")
 
             # Wake word
-            if not wake_active and porcupine.process(pcm) != -1: #not triggererd alr and detected
-                wake_active = True
-                wake_start_time = time.time()
-                end_sent = False
+            if not wakeActive and porcupine.process(pcm) != -1: #not triggererd alr and detected
+                wakeActive = True
+                wakeStartTime = time.time()
+                endSent = False
+                #interrupt tts
+                ttsState["ttsActive"] = False
+
+
                 print("🔔 Wake word detected")
+                
                 rmsRolling = []
 
-            if wake_active:
+            if wakeActive:
                 # Send audio
                 pcm_b64 = base64.b64encode(pcm.tobytes()).decode("ascii")
                 asyncio.run_coroutine_threadsafe(
@@ -63,51 +103,37 @@ async def run_client(baseRms):
                 
                 rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
                 rmsRolling.append(rms)
-                if len(rmsRolling) > (2*(SAMPLE_RATE / porcupine.frame_length)):
+                if len(rmsRolling) > (2*(SAMPLERATE / porcupine.frame_length)):
                     rmsRolling.pop(0)
 
 
 
-                if ((time.time() - wake_start_time) >= 3.0) and np.mean(rmsRolling) <= baseRms:
-                # if not end_sent and time.monotonic() - wake_start_time >= RECORD_SECONDS:
-                    end_sent = True
-                    wake_active = False
+                if ((time.time() - wakeStartTime) >= 3.0) and np.mean(rmsRolling) <= baseRms:
+                    endSent = True
+                    wakeActive = False
                     asyncio.run_coroutine_threadsafe(
                         ws.send(json.dumps({"type": "end"})),
                         loop
                     )
+                    ttsState["ttsActive"] = True
                     print("🛑 Sent END")
-
-        async for response in ws:
-            try:
-                msg = json.loads(response)
-                if msg.get("type") == "audio":
-                    # Decode and play audio from server
-                    audio_data = base64.b64decode(msg["data"])
-                    stream.write(audio_data)
-                    print("Playing audio chunk from server")
-                elif msg.get("type") == "end":
-                    print("Server finished sending audio")
-                    break
-                elif msg.get("type") == "song":
-                    print("Server sent song info:", msg.get("info", "No info"))
-                else:
-                    print("Server replied:", response)
-            except json.JSONDecodeError:
-                print("Server replied:", response)
 
 
         with sd.InputStream(
-            samplerate=SAMPLE_RATE,
+            samplerate=SAMPLERATE,
             channels=CHANNELS,
             blocksize=porcupine.frame_length,
-            callback=audio_callback
+            callback=audioCallback
         ):
             print("🎤 Listening for wake word...")
             while True:
                 await asyncio.sleep(0.1)
 
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+
 try:
-    asyncio.run(run_client(baseRms))
+    asyncio.run(runClient(baseRms))
 finally:
     porcupine.delete()
