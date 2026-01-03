@@ -9,11 +9,17 @@ import numpy as np
 import pyaudio
 import yt_dlp
 import subprocess
+import os
+from dotenv import load_dotenv
 
 # ===== CONFIG =====
-ACCESSKEY = ""
-KEYWORD = "picovoice"
+
+load_dotenv("keys.env")  #load .env file
+ACCESSKEY = os.getenv("picoApiKey")  #load from env
 WEBSOCKETURI = "ws://10.0.0.122:8765"
+KEYWORD = "picovoice"
+keywordPath = "HeyJerryRPIPvporcupine.ppn"
+
 
 SAMPLERATE = 16000
 CHANNELS = 1
@@ -23,7 +29,8 @@ rmsRolling = []
 # ===== PORCUPINE =====
 porcupine = pvporcupine.create(
     access_key=ACCESSKEY,
-    keywords=[KEYWORD],
+    keyword_paths=[keywordPath], #for custom keyword
+    #keywords=[KEYWORD], #for default keyword
     sensitivities=[0.5]
 )
 
