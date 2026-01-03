@@ -105,7 +105,12 @@ async def handler(ws):
             history.append({"role": "user", "content": text})
             print("Sending to LLM...", history)
             # response = ollama.chat(model=ollama_model,messages=history)
-            stream = ollama.chat(model=ollama_model,messages=history,stream=True)
+            stream = ollama.chat(
+                model=ollama_model,
+                messages=history,
+                stream=True,
+                keep_alive=-1)
+            
             print("LLM:",end=" ")
             full_reply = ""
             # responseText = ""

@@ -9,23 +9,33 @@ import numpy as np
 import pyaudio
 import yt_dlp
 import subprocess
+import pyaec
 
 # ===== CONFIG =====
 ACCESSKEY = ""
-KEYWORD = "picovoice"
-WEBSOCKETURI = "ws://10.0.0.122:8765"
+KEYWORD = "picovoice" #TODO: change to customn keyword
+WEBSOCKETURI = "ws://10.0.0.122:8765" #replace with your server ip
 
 SAMPLERATE = 16000
 CHANNELS = 1
 baseRms = 8
 rmsRolling = []
 
-# ===== PORCUPINE =====
+#  PORCUPINE setup
 porcupine = pvporcupine.create(
     access_key=ACCESSKEY,
     keywords=[KEYWORD],
     sensitivities=[0.5]
 )
+
+# AEC setup
+filterLength = int(SAMPLERATE * 0.4) 
+aec = pyaec.Aec(sample_rate=SAMPLERATE, filter_length=filterLength, frame_size=porcupine.frame_length)
+# Audio buffer for AEC
+speakerBuffer = np.zeros(porcupine.frame_length, dtype=np.float32)
+# Audio callback will fill this buffer
+micBuffer = np.zeros(porcupine.frame_length, dtype=np.int16)
+
 
 # youtube stream 
 
@@ -64,6 +74,18 @@ async def streamYouTube(query, stream, ttsState):
             chunk = await asyncio.to_thread(process.stdout.read, 3200)  #read 100ms of audio
             if not chunk:
                 break
+
+            chunkArray = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32767
+            # Keep only last `frame_length` samples
+            if len(chunkArray) >= porcupine.frame_length:
+                speakerBuffer[:] = chunkArray[-porcupine.frame_length:]
+            else:
+                # Roll buffer and append new chunk
+                speakerBuffer[:] = np.roll(speakerBuffer, -len(chunkArray))
+                speakerBuffer[-len(chunkArray):] = chunkArray
+
+
+
             stream.write(chunk)
             await asyncio.sleep(0)  #allow other tasks to run
 
@@ -86,6 +108,16 @@ async def receiveResponses(ws, stream, ttsState):
             if msg.get("type") == "audio" and ttsState["ttsActive"]:
                 # Decode and play audio chunks
                 audioData = base64.b64decode(msg["data"])
+                
+                chunkArray = np.frombuffer(audioData, dtype=np.int16).astype(np.float32) / 32767
+                # Keep only last `frame_length` samples
+                if len(chunkArray) >= porcupine.frame_length:
+                    speakerBuffer[:] = chunkArray[-porcupine.frame_length:]
+                else:
+                    # Roll buffer and append new chunk
+                    speakerBuffer[:] = np.roll(speakerBuffer, -len(chunkArray))
+                    speakerBuffer[-len(chunkArray):] = chunkArray
+
                 stream.write(audioData)
                 print("Playing audio chunk from server")
 
@@ -131,10 +163,17 @@ async def runClient(baseRms):
             if status:
                 print(status)
 
-            pcm = (indata[:, 0] * 32767).astype("int16")
+            micBuffer = (indata[:, 0] * 32767).astype(np.int16)
+            if np.any(speakerBuffer):
+                out = np.array(aec.cancel_echo(micBuffer, (speakerBuffer * 32767).astype(np.int16)), dtype=np.float32)
+                pcm = (out * 32767).astype(np.int16)
+            else:
+                pcm = micBuffer
+
+
 
             # Wake word
-            if not wakeActive and porcupine.process(pcm) != -1: #not triggererd alr and detected
+            if not wakeActive and (porcupine.process(pcm) != -1): #not triggererd alr and detected
                 wakeActive = True
                 wakeStartTime = time.time()
                 endSent = False
@@ -148,7 +187,7 @@ async def runClient(baseRms):
 
             if wakeActive:
                 # Send audio
-                pcm_b64 = base64.b64encode(pcm.tobytes()).decode("ascii")
+                pcm_b64 = base64.b64encode(micBuffer.tobytes()).decode("ascii")
                 asyncio.run_coroutine_threadsafe(
                     ws.send(json.dumps({"type": "audio", "data": pcm_b64})),
                     loop
@@ -156,7 +195,7 @@ async def runClient(baseRms):
 
                 # check rolling 1 sec average rms averages after 2 sec passes
                 
-                rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
+                rms = np.sqrt(np.mean(micBuffer.astype(np.float32) ** 2))
                 rmsRolling.append(rms)
                 if len(rmsRolling) > (2*(SAMPLERATE / porcupine.frame_length)):
                     rmsRolling.pop(0)
