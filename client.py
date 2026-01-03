@@ -7,6 +7,8 @@ import base64
 import time
 import numpy as np
 import pyaudio
+import yt_dlp
+import subprocess
 
 # ===== CONFIG =====
 ACCESSKEY = ""
@@ -25,6 +27,56 @@ porcupine = pvporcupine.create(
     sensitivities=[0.5]
 )
 
+# youtube stream 
+
+async def streamYouTube(query, stream, ttsState):
+    options = {
+        'format': 'bestaudio/best',
+        'noplaylist': True,
+        'quiet': True,
+        'default_search': 'ytsearch'
+    }
+
+    def getUrl(): #retrieves song url from yt
+        with yt_dlp.YoutubeDL(options) as ytdl: #use with to close after done
+            metadata = ytdl.extract_info(query, download=False)
+            url = metadata['entries'][0]['url']
+            print("Streaming audio from URL:", url)
+            return url
+
+    url = await asyncio.to_thread(getUrl) #needs to be async
+
+    process = subprocess.Popen(  #setup ffmpeg 
+        [
+            "ffmpeg",
+            "-loglevel", "error",
+            "-i", url,
+            "-f", "s16le",
+            "-ac", "1",
+            "-ar", "16000",
+            "-"
+        ],
+        stdout=subprocess.PIPE,
+        bufsize=0
+    )
+    try: 
+        while ttsState["ttsActive"]: 
+            chunk = await asyncio.to_thread(process.stdout.read, 3200)  #read 100ms of audio
+            if not chunk:
+                break
+            stream.write(chunk)
+            await asyncio.sleep(0)  #allow other tasks to run
+
+
+    finally:#close process when done or interrupt
+        process.kill()
+        process.stdout.close()
+
+
+        
+
+
+
 #server responses
 
 async def receiveResponses(ws, stream, ttsState):
@@ -41,8 +93,11 @@ async def receiveResponses(ws, stream, ttsState):
                 print("Server finished sending audio")
                 
                 break
-            elif msg.get("type") == "song":
-                print("Server sent song info:", msg.get("info", "No info"))
+            elif msg.get("type") == "songrec":
+                query = msg.get("data", "Unknown Song")
+                print("Streaming song from YouTube:", query)
+                asyncio.create_task(streamYouTube(query, stream, ttsState)) #stream the song
+
             else:
                 print("Server replied:", response)
         except json.JSONDecodeError:

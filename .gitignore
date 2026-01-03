@@ -10,3 +10,4 @@ speakerVenv/
  env/
  .env
  .vscode/
+*.env
