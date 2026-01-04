@@ -35,7 +35,6 @@ porcupine = pvporcupine.create(
 )
 
 # youtube stream 
-
 async def streamYouTube(query, stream, ttsState):
     options = {
         'format': 'bestaudio/best',
@@ -51,7 +50,7 @@ async def streamYouTube(query, stream, ttsState):
             print("Streaming audio from URL:", url)
             return url
 
-    url = await asyncio.to_thread(getUrl) #needs to be async
+    url = await asyncio.to_thread(getUrl)
 
     process = subprocess.Popen(  #setup ffmpeg 
         [
@@ -74,18 +73,12 @@ async def streamYouTube(query, stream, ttsState):
             stream.write(chunk)
             await asyncio.sleep(0)  #allow other tasks to run
 
-
     finally:#close process when done or interrupt
         process.kill()
         process.stdout.close()
 
 
-        
-
-
-
-#server responses
-
+# server responses
 async def receiveResponses(ws, stream, ttsState):
     async for response in ws:
         try:
@@ -98,21 +91,19 @@ async def receiveResponses(ws, stream, ttsState):
 
             elif msg.get("type") == "end":
                 print("Server finished sending audio")
-                
                 break
+
             elif msg.get("type") == "songrec":
                 query = msg.get("data", "Unknown Song")
                 print("Streaming song from YouTube:", query)
                 asyncio.create_task(streamYouTube(query, stream, ttsState)) #stream the song
 
-            else:
+            else: #if another message type sent
                 print("Server replied:", response)
         except json.JSONDecodeError:
             print("Server replied:", response)
 
-
-
-
+# main client 
 async def runClient(baseRms):
 
     p = pyaudio.PyAudio()
@@ -149,7 +140,7 @@ async def runClient(baseRms):
                 ttsState["ttsActive"] = False
 
 
-                print("🔔 Wake word detected")
+                print("Wake word detected")
                 
                 rmsRolling = []
 
@@ -178,7 +169,7 @@ async def runClient(baseRms):
                         loop
                     )
                     ttsState["ttsActive"] = True
-                    print("🛑 Sent END")
+                    print("Sent END")
 
 
         with sd.InputStream(
@@ -187,7 +178,7 @@ async def runClient(baseRms):
             blocksize=porcupine.frame_length,
             callback=audioCallback
         ):
-            print("🎤 Listening for wake word...")
+            print("Listening for wake word...")
             while True:
                 await asyncio.sleep(0.1)
 

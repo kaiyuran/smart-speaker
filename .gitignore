@@ -11,3 +11,4 @@ speakerVenv/
  .env
  .vscode/
 *.env
+tempCodeRunnerFile.py
